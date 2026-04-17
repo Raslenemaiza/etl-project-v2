@@ -235,9 +235,6 @@ elif page == "🤖 Modèle ML":
         if len(num_cols) < 2:
             st.error("Pas assez de colonnes numériques pour le ML !")
         else:
-            # Toutes les colonnes numériques disponibles comme cible possible
-            all_num = [c for c in etl.df.select_dtypes(include="object").__class__
-                       if True] or num_cols
             target = st.selectbox(
                 "Choisis la colonne cible (ce que tu veux prédire)",
                 num_cols
