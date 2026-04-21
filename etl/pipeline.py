@@ -118,8 +118,7 @@ class ETLPipeline:
             before = len(self.df)
             self.df.drop_duplicates(inplace=True)
             n = before - len(self.df)
-            msg = f"T1 - Doublons supprimés : {n}"
-            log.append(msg)
+            log.append(f"T1 - Doublons supprimes : {n}")
         except Exception as e:
             self.errors.append(f"T1 erreur : {e}")
 
@@ -142,7 +141,7 @@ class ETLPipeline:
                         n_conv += 1
                 except Exception:
                     pass
-            log.append(f"T2 - Conversion types : {n_conv} colonnes texte → nombre")
+            log.append(f"T2 - Conversion types : {n_conv} colonnes texte -> nombre")
         except Exception as e:
             self.errors.append(f"T2 erreur : {e}")
 
@@ -154,29 +153,37 @@ class ETLPipeline:
             ]
             for col in cols_to_clean:
                 self.df[col] = self.df[col].astype(str).str.strip().str.upper()
-            log.append(f"T3 - Nettoyage espaces : {len(cols_to_clean)} colonnes normalisées")
+            log.append(f"T3 - Nettoyage espaces : {len(cols_to_clean)} colonnes normalisees")
         except Exception as e:
             self.errors.append(f"T3 erreur : {e}")
 
         # ── T4 : Imputation valeurs manquantes ────────────────────
+        # MODE pour texte, MEDIANE pour nombres
+        # Compatible pandas 1.x ET 2.x
         try:
-            fill_val = ETL["missing_text_fill"]
-            n_total  = 0
+            n_total = 0
             for col in self.df.columns:
                 if col in self.id_cols:
                     continue
-                n_miss  = self.df[col].isin(["nan", "NaN", "None", ""]).sum()
-                n_miss += self.df[col].isnull().sum()
+
+                n_miss = self.df[col].isnull().sum()
+
                 if n_miss > 0:
-                    if self.df[col].dtype == "object":
-                        self.df[col] = self.df[col].replace(
-                            {"nan": fill_val, "NaN": fill_val,
-                             "None": fill_val, "": fill_val}
-                        ).fillna(fill_val)
-                    else:
-                        self.df[col] = self.df[col].fillna(self.df[col].median())
+                    try:
+                        # Essayer médiane (marche pour numérique)
+                        median_val = self.df[col].median()
+                        self.df[col] = self.df[col].fillna(median_val)
+                    except Exception:
+                        # Si échec -> colonne textuelle -> utiliser le mode
+                        try:
+                            mode_vals = self.df[col].dropna().mode()
+                            fill_val  = mode_vals[0] if len(mode_vals) > 0 else ETL["missing_text_fill"]
+                            self.df[col] = self.df[col].fillna(fill_val)
+                        except Exception:
+                            self.df[col] = self.df[col].fillna(ETL["missing_text_fill"])
                     n_total += n_miss
-            log.append(f"T4 - Imputation : {n_total} valeurs traitées")
+
+            log.append(f"T4 - Imputation : {n_total} valeurs (mode pour texte, mediane pour nombres)")
         except Exception as e:
             self.errors.append(f"T4 erreur : {e}")
 
@@ -198,7 +205,7 @@ class ETLPipeline:
                     if invalid.sum() > 0:
                         self.df.loc[invalid, col] = self.df[col].median()
                         n_invalid += invalid.sum()
-            log.append(f"T5 - Validation métier : {n_invalid} valeurs corrigées")
+            log.append(f"T5 - Validation metier : {n_invalid} valeurs corrigees")
         except Exception as e:
             self.errors.append(f"T5 erreur : {e}")
 
@@ -225,7 +232,7 @@ class ETLPipeline:
                     n_dates += 1
                 except Exception:
                     pass
-            log.append(f"T6 - Dates : {n_dates} colonnes → 7 features chacune")
+            log.append(f"T6 - Dates : {n_dates} colonnes -> 7 features chacune")
         except Exception as e:
             self.errors.append(f"T6 erreur : {e}")
 
@@ -244,7 +251,6 @@ class ETLPipeline:
                     (self.df[col] < Q1 - factor * IQR) |
                     (self.df[col] > Q3 + factor * IQR)
                 )
-                # Flaguer seulement si > seuil minimum
                 if mask.sum() / len(self.df) > min_pct:
                     self.df[f"{col}_outlier"] = mask.astype(int)
                     n_out += mask.sum()
@@ -253,11 +259,14 @@ class ETLPipeline:
             self.errors.append(f"T7 erreur : {e}")
 
         # ── T8 : Encodage ML adaptatif ────────────────────────────
+        # AMELIORATION : inclure les colonnes nom/email pour le ML
+        # si elles ont peu de valeurs uniques
         try:
             le          = LabelEncoder()
             max_unique  = ETL["encoding_max_unique"]
             excl_kw     = ETL["encoding_exclude_keywords"]
             n_encoded   = 0
+
             cols_encode = [
                 c for c in self.df.select_dtypes(include="object").columns
                 if c not in self.id_cols
@@ -265,18 +274,21 @@ class ETLPipeline:
                 and self.df[c].nunique() < max_unique
             ]
             for col in cols_encode:
-                self.df[f"{col}_encoded"] = le.fit_transform(
+                encoded_col = f"{col}_encoded"
+                self.df[encoded_col] = le.fit_transform(
                     self.df[col].astype(str)
                 )
+                # Ajouter aussi dans num_cols pour le ML
+                if encoded_col not in self.num_cols:
+                    self.num_cols.append(encoded_col)
                 n_encoded += 1
-            log.append(f"T8 - Encodage ML : {n_encoded} colonnes encodées")
+            log.append(f"T8 - Encodage ML : {n_encoded} colonnes encodees")
         except Exception as e:
             self.errors.append(f"T8 erreur : {e}")
 
         # ── T9 : Score de complétude ──────────────────────────────
         try:
             max_cols     = ETL["completeness_max_cols"]
-            fill_val     = ETL["missing_text_fill"]
             quality_cols = [
                 c for c in self.cat_cols if c in self.df.columns
             ][:max_cols]
@@ -285,14 +297,14 @@ class ETLPipeline:
                 self.df["completeness_score"] = (
                     self.df[quality_cols].apply(lambda row: sum(
                         1 for v in row
-                        if pd.notna(v) and str(v) not in [fill_val, "nan", ""]
+                        if pd.notna(v) and str(v) not in ["UNKNOWN", "nan", ""]
                     ), axis=1) / len(quality_cols) * 100
                 ).round(1)
             else:
                 self.df["completeness_score"] = 100.0
 
             avg = self.df["completeness_score"].mean()
-            log.append(f"T9 - Score complétude : {avg:.1f}% en moyenne")
+            log.append(f"T9 - Score completude : {avg:.1f}% en moyenne")
         except Exception as e:
             self.errors.append(f"T9 erreur : {e}")
 
