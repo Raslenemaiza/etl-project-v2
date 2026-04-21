@@ -210,12 +210,30 @@ class ETLPipeline:
             self.errors.append(f"T5 erreur : {e}")
 
         # ── T6 : Conversion des dates + feature engineering ───────
+        # Supporte les mois en français ET en anglais
         try:
+            FR_MONTHS = {
+                "janv": "Jan", "fevr": "Feb", "févr": "Feb", "fév": "Feb",
+                "mars": "Mar", "avr": "Apr", "mai": "May",
+                "juin": "Jun", "juil": "Jul", "aout": "Aug", "août": "Aug",
+                "sept": "Sep", "oct": "Oct", "nov": "Nov",
+                "dec": "Dec", "déc": "Dec", "jan": "Jan"
+            }
+
+            def translate_date(d):
+                if pd.isna(d): return d
+                d_str = str(d).lower()
+                for fr, en in FR_MONTHS.items():
+                    d_str = d_str.replace(fr, en)
+                return d_str
+
             n_dates = 0
             for col in self.date_cols:
                 try:
+                    # Traduire mois français → anglais avant parsing
+                    col_translated = self.df[col].apply(translate_date)
                     self.df[col] = pd.to_datetime(
-                        self.df[col], dayfirst=True, errors="coerce"
+                        col_translated, dayfirst=True, errors="coerce"
                     )
                     prefix = (col.lower()
                                  .replace("date", "")
