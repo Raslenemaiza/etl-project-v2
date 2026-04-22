@@ -258,8 +258,8 @@ elif page == "🤖 Modèle ML":
                 # ── 3. Bouton entraînement ─────────────────────────
                 if st.button("🚀 Entraîner le Modèle ML", type="primary", use_container_width=True):
                     for target in targets:
-                        st.markdown(f"---
-#### 🎯 Prédiction : ")
+                        st.markdown("---")
+                        st.markdown(f"#### 🎯 Prédiction : `{target}`")
                         try:
                             with st.spinner(f"Entraînement pour {target}..."):
                                 result = train_model(etl.df, target)
