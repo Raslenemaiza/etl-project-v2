@@ -235,17 +235,42 @@ elif page == "🤖 Modèle ML":
         if len(num_cols) < 2:
             st.error("Pas assez de colonnes numériques pour le ML !")
         else:
+            st.markdown("### ⚙️ Configuration du Modèle")
+
+            # ── 1. Choisir la colonne CIBLE ───────────────────────
             target = st.selectbox(
-                "Choisis la colonne cible (ce que tu veux prédire)",
+                "🎯 Colonne cible — ce que tu veux prédire",
                 num_cols
             )
 
+            # ── 2. Choisir les FEATURES (colonnes d'entrée) ───────
+            features_disponibles = [c for c in num_cols if c != target]
+
+            st.markdown("**📊 Colonnes features — ce que le modèle utilise pour prédire**")
+
+            col_sel1, col_sel2 = st.columns([3, 1])
+            with col_sel1:
+                selected_features = st.multiselect(
+                    "Choisis 1 ou plusieurs features (laisser vide = toutes)",
+                    options    = features_disponibles,
+                    default    = features_disponibles,
+                    help       = "Sélectionne les colonnes que le modèle utilisera comme entrées"
+                )
+            with col_sel2:
+                st.metric("Features sélectionnées", len(selected_features))
+
+            if len(selected_features) == 0:
+                st.warning("⚠️ Aucune feature sélectionnée — toutes les features seront utilisées.")
+                selected_features = features_disponibles
+
+            # ── 3. Info type de problème ───────────────────────────
             st.info(f"🔎 Seuil classification/régression : ≤ {ML['classification_threshold']} valeurs uniques")
 
+            # ── 4. Bouton entraînement ─────────────────────────────
             if st.button("🚀 Entraîner le Modèle ML", type="primary", use_container_width=True):
                 try:
                     with st.spinner("Entraînement en cours..."):
-                        result = train_model(etl.df, target)
+                        result = train_model(etl.df, target, selected_features)
 
                     prob_type   = result["prob_type"]
                     score       = result["score"]
@@ -253,16 +278,23 @@ elif page == "🤖 Modèle ML":
 
                     st.success(f"Modèle entraîné ! Type : **{prob_type.upper()}**")
 
-                    col1, col2, col3 = st.columns(3)
+                    # ── Métriques ──────────────────────────────────
+                    col1, col2, col3, col4 = st.columns(4)
                     col1.metric("Lignes entraînement", f"{result['n_train']:,}")
                     col2.metric("Lignes test"        , f"{result['n_test']:,}")
+                    col3.metric("Features utilisées" , f"{len(result['features'])}")
 
                     if prob_type == "classification":
-                        col3.metric("Accuracy", f"{score['accuracy']:.2f}%")
+                        col4.metric("Accuracy", f"{score['accuracy']:.2f}%")
                     else:
-                        col3.metric("R² Score", f"{score['r2']:.2f}%")
+                        col4.metric("R² Score", f"{score['r2']:.2f}%")
                         st.metric("MAE", f"{score['mae']:.4f}")
 
+                    # ── Features utilisées ─────────────────────────
+                    with st.expander("📋 Voir les features utilisées"):
+                        st.write(result["features"])
+
+                    # ── Importance des features ────────────────────
                     st.subheader("Importance des features")
                     col_chart, col_table = st.columns(2)
                     with col_chart:
