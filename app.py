@@ -237,73 +237,60 @@ elif page == "🤖 Modèle ML":
         else:
             st.markdown("### ⚙️ Configuration du Modèle")
 
-            # ── 1. Choisir la colonne CIBLE ───────────────────────
-            target = st.selectbox(
-                "🎯 Colonne cible — ce que tu veux prédire",
-                num_cols
-            )
-
-            # ── 2. Choisir les FEATURES (colonnes d'entrée) ───────
-            features_disponibles = [c for c in num_cols if c != target]
-
-            st.markdown("**📊 Colonnes features — ce que le modèle utilise pour prédire**")
-
+            # ── 1. Choisir les colonnes CIBLES (multi-target) ─────
             col_sel1, col_sel2 = st.columns([3, 1])
             with col_sel1:
-                selected_features = st.multiselect(
-                    "Choisis 1 ou plusieurs features (laisser vide = toutes)",
-                    options    = features_disponibles,
-                    default    = features_disponibles,
-                    help       = "Sélectionne les colonnes que le modèle utilisera comme entrées"
+                targets = st.multiselect(
+                    "🎯 Colonnes cibles — ce que tu veux prédire (1 ou plusieurs)",
+                    options = num_cols,
+                    default = [num_cols[0]],
+                    help    = "Tu peux choisir plusieurs colonnes à prédire"
                 )
             with col_sel2:
-                st.metric("Features sélectionnées", len(selected_features))
+                st.metric("Cibles choisies", len(targets))
 
-            if len(selected_features) == 0:
-                st.warning("⚠️ Aucune feature sélectionnée — toutes les features seront utilisées.")
-                selected_features = features_disponibles
+            if len(targets) == 0:
+                st.warning("⚠️ Choisis au moins une colonne cible !")
+            else:
+                # ── 2. Info type de problème ───────────────────────
+                st.info(f"🔎 Seuil classification/régression : ≤ {ML['classification_threshold']} valeurs uniques")
 
-            # ── 3. Info type de problème ───────────────────────────
-            st.info(f"🔎 Seuil classification/régression : ≤ {ML['classification_threshold']} valeurs uniques")
+                # ── 3. Bouton entraînement ─────────────────────────
+                if st.button("🚀 Entraîner le Modèle ML", type="primary", use_container_width=True):
+                    for target in targets:
+                        st.markdown(f"---
+#### 🎯 Prédiction : ")
+                        try:
+                            with st.spinner(f"Entraînement pour {target}..."):
+                                result = train_model(etl.df, target)
 
-            # ── 4. Bouton entraînement ─────────────────────────────
-            if st.button("🚀 Entraîner le Modèle ML", type="primary", use_container_width=True):
-                try:
-                    with st.spinner("Entraînement en cours..."):
-                        result = train_model(etl.df, target, selected_features)
+                            prob_type   = result["prob_type"]
+                            score       = result["score"]
+                            importances = result["importances"]
 
-                    prob_type   = result["prob_type"]
-                    score       = result["score"]
-                    importances = result["importances"]
+                            st.success(f"Modèle entraîné ! Type : **{prob_type.upper()}**")
 
-                    st.success(f"Modèle entraîné ! Type : **{prob_type.upper()}**")
+                            # ── Métriques ──────────────────────────
+                            col1, col2, col3, col4 = st.columns(4)
+                            col1.metric("Lignes train", f"{result['n_train']:,}")
+                            col2.metric("Lignes test" , f"{result['n_test']:,}")
+                            col3.metric("Features"    , f"{len(result['features'])}")
 
-                    # ── Métriques ──────────────────────────────────
-                    col1, col2, col3, col4 = st.columns(4)
-                    col1.metric("Lignes entraînement", f"{result['n_train']:,}")
-                    col2.metric("Lignes test"        , f"{result['n_test']:,}")
-                    col3.metric("Features utilisées" , f"{len(result['features'])}")
+                            if prob_type == "classification":
+                                col4.metric("Accuracy", f"{score['accuracy']:.2f}%")
+                            else:
+                                col4.metric("R² Score", f"{score['r2']:.2f}%")
+                                st.metric("MAE", f"{score['mae']:.4f}")
 
-                    if prob_type == "classification":
-                        col4.metric("Accuracy", f"{score['accuracy']:.2f}%")
-                    else:
-                        col4.metric("R² Score", f"{score['r2']:.2f}%")
-                        st.metric("MAE", f"{score['mae']:.4f}")
+                            # ── Importance des features ────────────
+                            col_chart, col_table = st.columns(2)
+                            with col_chart:
+                                plot_feature_importance(importances, target)
+                            with col_table:
+                                st.dataframe(importances, use_container_width=True)
 
-                    # ── Features utilisées ─────────────────────────
-                    with st.expander("📋 Voir les features utilisées"):
-                        st.write(result["features"])
-
-                    # ── Importance des features ────────────────────
-                    st.subheader("Importance des features")
-                    col_chart, col_table = st.columns(2)
-                    with col_chart:
-                        plot_feature_importance(importances, target)
-                    with col_table:
-                        st.dataframe(importances, use_container_width=True)
-
-                except Exception as e:
-                    st.error(f"Erreur lors de l'entraînement : {e}")
+                        except Exception as e:
+                            st.error(f"Erreur pour {target} : {e}")
 
 
 # ══════════════════════════════════════════════════════════════════════
